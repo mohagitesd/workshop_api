@@ -1,0 +1,25 @@
+### 🏁 Test de l'API
+GET http://127.0.0.1:8000/
+
+### 🎨 Récupérer quelques musées
+GET http://127.0.0.1:8000/museums?limit=5
+
+### Ajouter un favori
+POST http://127.0.0.1:8000/favorites
+Content-Type: application/json
+
+{
+  "id": "musee-test-001",
+  "name": "Musée du Louvre",
+  "city": "Paris",
+  "department": "75"
+}
+
+### Voir les favoris
+GET http://127.0.0.1:8000/favorites
+
+### Supprimer un favori
+DELETE http://127.0.0.1:8000/favorites/musee-test-001
+
+### érifier après suppression
+GET http://127.0.0.1:8000/favorites
