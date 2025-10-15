@@ -25,15 +25,47 @@ DELETE http://127.0.0.1:8000/favorites/musee-test-001
 GET http://127.0.0.1:8000/favorites
 
 ### Enregistrer un utilisateur
-POST http://127.0.0.1:8000/register
+POST http://127.0.0.1:8000/users
 Content-Type: application/json
 
 {
-  "username": "john_doe",
-  "email": "johndoe@gmail.com",
-  "password": "securepassword"
+  "username": "testuser",
+  "email": "test@mail.com",
+  "password": "123456"
+}
+
+### Connexion pour obtenir le token JWT
+POST http://127.0.0.1/login
+Content-Type: application/json
+
+{ 
+  "email": "test@mail.com",
+  "password": "123456"
 }
 
 ### Voir les utilisateurs enregistrés
-GET http://127.0.0.1:8000/register
+GET http://127.0.0.1:8000/users
 
+### Connexion pour obtenir le token JWT
+POST http://127.0.0.1:8000/token
+Content-Type: application/x-www-form-urlencoded
+
+username=test@mail.com&password=123456
+
+
+### Ajout d’un favori (avec le token JWT)
+POST http://127.0.0.1:8000/favorites
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjMsInVzZXJuYW1lIjoidGVzdHVzZXIiLCJleHAiOjE3NjA2MjI2ODR9.j-0afFiLdqp-obKRJ5He2XjqLhtNjrtLg4EsIUfPqt4
+
+{
+  "id": "M123",
+  "name": "Musée du Louvre",
+  "city": "Paris",
+  "department": "75"
+}
+
+
+### Récupération des favoris du user connecté
+GET http://127.0.0.1:8000/favorites
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjMsInVzZXJuYW1lIjoidGVzdHVzZXIiLCJleHAiOjE3NjA2MjEyMTZ9.w5S0A2uQ1VSvBZt1CRHPH5UbQDOs-gOxY_avf8R9mI8

@@ -1,18 +1,32 @@
+import os
 import requests
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Depends, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, OAuth2PasswordRequestForm
+from typing import Optional
 from pydantic import EmailStr
 import bcrypt
 import uvicorn
 from pydantic import BaseModel
 from pathlib import Path
-from database import *
+from database import get_connection
 import sqlite3
+import jwt
+from datetime import datetime, timedelta, timezone
+from dotenv import load_dotenv
 
+load_dotenv()
+
+SECRET_KEY = os.getenv("MUSEOFILE_SECRET")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 1440)) 
+
+security = HTTPBearer()
 
 app = FastAPI(title="API Muséofile rapide et filtrable")
 
 
 MUSEOFILE_API = "https://data.culture.gouv.fr/api/explore/v2.1/catalog/datasets/musees-de-france-base-museofile/records"
+
 
 
 # --- Modèle Pydantic pour un favori
@@ -29,8 +43,54 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
 
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_at: datetime
 
-@app.post("/register")
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str: 
+    to_encode = data.copy() 
+    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire})
+    token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return token
+
+
+def decode_token(token: str) -> dict:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expiré")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Token invalide")
+
+
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)):
+    token = credentials.credentials
+    print (token)
+    payload = decode_token(token)
+    print("payload:", payload)
+    user_id = payload.get("sub")
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Token invalide (sub manquant)")
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, username, email FROM users WHERE id = ?", (user_id,))
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        raise HTTPException(status_code=401, detail="Utilisateur introuvable")
+
+    return {"id": row[0], "username": row[1], "email": row[2]}
+
+
+
+@app.post("/users")
 def register(user: UserCreate):
     conn = get_connection()
     cur = conn.cursor()
@@ -41,13 +101,14 @@ def register(user: UserCreate):
             (user.username, user.email, hashed)
         )
         conn.commit()
-        return {"message": "Utilisateur créé", "username": user.username, "email": user.email}
+        user_id = cur.lastrowid
+        return {"message": "Utilisateur créé", "id": user_id, "username": user.username, "email": user.email}
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=400, detail="Nom d'utilisateur ou email déjà utilisé.")
     finally:
         conn.close()
 
-@app.get("/register")
+@app.get("/users")
 def get_register():
     conn = get_connection()
     cursor = conn.cursor()
@@ -58,6 +119,36 @@ def get_register():
         return {"users": user_list}
     finally:
         conn.close()
+
+
+
+@app.post("/login", response_model=Token)
+def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, hashed_password, username FROM users WHERE email = ?", (form_data.username,))
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
+
+    user_id, hashed_password, username = row[0], row[1], row[2]
+    if not bcrypt.checkpw(form_data.password.encode(), hashed_password.encode()):
+        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
+
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    token_data = {"sub": user_id, "username": username}
+    token = create_access_token(token_data, expires_delta=access_token_expires)
+    expires_at = datetime.now(timezone.utc) + access_token_expires
+    return {"access_token": token, "expires_at": expires_at}
+
+
+@app.get("/users/me")
+def read_me(current_user: dict = Depends(get_current_user)):
+    return {"user": current_user}
+
+
 
 @app.get("/")
 def root():
@@ -118,11 +209,15 @@ def get_museums(
     }
 
 @app.get("/favorites")
-def get_favorites():
+def get_favorites(current_user: dict = Depends(get_current_user)):
+    user_id = current_user["id"]
     conn = get_connection()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT id, name, city, department FROM favorites")
+        cur.execute(
+            "SELECT musee_id, name, city, department FROM favorites WHERE user_id = ?",
+            (user_id,)
+        )
         rows = cur.fetchall()
         favs = [
             {"id": r[0], "name": r[1], "city": r[2], "department": r[3]} for r in rows
@@ -133,34 +228,33 @@ def get_favorites():
 
 
 @app.post("/favorites")
-def add_favorite(fav: Favorite):
+def add_favorite(fav: Favorite, current_user: dict = Depends(get_current_user)):
+    user_id = current_user["id"]
     conn = get_connection()
     cur = conn.cursor()
     try:
         cur.execute(
-            "INSERT INTO favorites (id, name, city, department) VALUES (?, ?, ?, ?)",
-            (fav.id, fav.name, fav.city, fav.department),
+            "INSERT INTO favorites (musee_id, name, city, department, user_id) VALUES (?, ?, ?, ?, ?)",
+            (fav.id, fav.name, fav.city, fav.department, user_id),
         )
         conn.commit()
         return {"message": "Musée ajouté aux favoris", "favorite": fav}
     except sqlite3.IntegrityError:
-        raise HTTPException(status_code=400, detail="Ce musée est déjà dans les favoris.")
-    except Exception as exc:
-        print("Erreur DB:", exc)
-        raise HTTPException(status_code=500, detail="Erreur lors de l'enregistrement du favori")
+        raise HTTPException(status_code=400, detail="Ce musée est déjà dans les favoris pour cet utilisateur.")
     finally:
         conn.close()
 
 
 @app.delete("/favorites/{museum_id}")
-def remove_favorite(museum_id: str):
+def remove_favorite(museum_id: str, current_user: dict = Depends(get_current_user)):
+    user_id = current_user["id"]
     conn = get_connection()
     cur = conn.cursor()
     try:
-        cur.execute("DELETE FROM favorites WHERE id = ?", (museum_id,))
+        cur.execute("DELETE FROM favorites WHERE musee_id = ? AND user_id = ?", (museum_id, user_id))
         conn.commit()
         if cur.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Musée non trouvé dans les favoris.")
+            raise HTTPException(status_code=404, detail="Musée non trouvé dans les favoris de cet utilisateur.")
         return {"message": "Musée retiré des favoris"}
     finally:
         conn.close()
