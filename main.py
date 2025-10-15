@@ -1,13 +1,12 @@
 import requests
-from fastapi import FastAPI, HTTPException, Query, Header
+from fastapi import FastAPI, HTTPException, Query
+from pydantic import EmailStr
+import bcrypt
 import uvicorn
 from pydantic import BaseModel
 from pathlib import Path
 from database import *
 import sqlite3
-import bcrypt
-from uuid import uuid4
-from typing import Optional
 
 
 app = FastAPI(title="API Muséofile rapide et filtrable")
@@ -21,8 +20,44 @@ class Favorite(BaseModel):
     id: str
     name: str
     city: str | None = None
-    department: str | None = None
+    department: str | None = None 
 
+
+# --- Modèle Pydantic pour création d'utilisateur
+class UserCreate(BaseModel):
+    username: str
+    email: EmailStr
+    password: str
+
+
+@app.post("/register")
+def register(user: UserCreate):
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        hashed = bcrypt.hashpw(user.password.encode(), bcrypt.gensalt()).decode()
+        cur.execute(
+            "INSERT INTO users (username, email, hashed_password) VALUES (?, ?, ?)",
+            (user.username, user.email, hashed)
+        )
+        conn.commit()
+        return {"message": "Utilisateur créé", "username": user.username, "email": user.email}
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="Nom d'utilisateur ou email déjà utilisé.")
+    finally:
+        conn.close()
+
+@app.get("/register")
+def get_register():
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id, username, email FROM users")
+        users = cursor.fetchall()
+        user_list = [{"id": u[0], "username": u[1], "email": u[2]} for u in users]
+        return {"users": user_list}
+    finally:
+        conn.close()
 
 @app.get("/")
 def root():
@@ -65,7 +100,7 @@ def get_museums(
 
     for record in data.get("results", []):
         musee = {
-            "id": record.get("id"),
+            "id": record.get("identifiant"),
             "name": record.get("nom_officiel"),
             "city": record.get("ville"),
             "department": record.get("departement"),
@@ -93,153 +128,6 @@ def get_favorites():
             {"id": r[0], "name": r[1], "city": r[2], "department": r[3]} for r in rows
         ]
         return {"count": len(favs), "favorites": favs}
-    finally:
-        conn.close()
-
-
-# ------------------ Authentication ------------------
-
-
-class RegisterIn(BaseModel):
-    username: str
-    email: str
-    password: str
-
-
-class LoginIn(BaseModel):
-    username: str
-    password: str
-
-
-def hash_password(plain: str) -> str:
-    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
-
-
-def verify_password(plain: str, hashed: str) -> bool:
-    return bcrypt.checkpw(plain.encode(), hashed.encode())
-
-
-@app.post('/register')
-def register(data: RegisterIn):
-    conn = get_connection()
-    cur = conn.cursor()
-    try:
-        hashed = hash_password(data.password)
-        cur.execute(
-            'INSERT INTO users (username, email, hashed_password) VALUES (?, ?, ?)',
-            (data.username, data.email, hashed),
-        )
-        conn.commit()
-        return {'message': 'Utilisateur créé'}
-    except sqlite3.IntegrityError as e:
-        raise HTTPException(status_code=400, detail='Username ou email déjà utilisé')
-    finally:
-        conn.close()
-
-
-@app.post('/login')
-def login(data: LoginIn):
-    conn = get_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute('SELECT id, hashed_password FROM users WHERE username = ?', (data.username,))
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(status_code=401, detail='Identifiants invalides')
-        user_id, hashed = row[0], row[1]
-        if not verify_password(data.password, hashed):
-            raise HTTPException(status_code=401, detail='Identifiants invalides')
-        token = str(uuid4())
-        cur.execute('INSERT INTO tokens (token, user_id, created_at) VALUES (?, ?, datetime("now"))', (token, user_id))
-        conn.commit()
-        return {'token': token}
-    finally:
-        conn.close()
-
-
-def get_user_from_token(authorization: Optional[str]) -> Optional[int]:
-    # expects Authorization: Bearer <token>
-    if not authorization:
-        return None
-    parts = authorization.split()
-    if len(parts) != 2 or parts[0].lower() != 'bearer':
-        return None
-    token = parts[1]
-    conn = get_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute('SELECT user_id FROM tokens WHERE token = ?', (token,))
-        row = cur.fetchone()
-        if not row:
-            return None
-        return row[0]
-    finally:
-        conn.close()
-
-
-# ------------------ User favorites (protected) ------------------
-
-
-@app.post('/my/favorites')
-def add_my_favorite(fav: Favorite, Authorization: Optional[str] = Header(None)):
-    user_id = get_user_from_token(Authorization)
-    if not user_id:
-        raise HTTPException(status_code=401, detail='Unauthorized')
-
-    # Ensure favorite exists in favorites table
-    conn = get_connection()
-    cur = conn.cursor()
-    try:
-        try:
-            cur.execute('INSERT INTO favorites (id, name, city, department) VALUES (?, ?, ?, ?)', (fav.id, fav.name, fav.city, fav.department))
-        except sqlite3.IntegrityError:
-            # already exists, that's fine
-            pass
-
-        # link to user
-        cur.execute('INSERT INTO user_favorites (user_id, favorite_id) VALUES (?, ?)', (user_id, fav.id))
-        conn.commit()
-        return {'message': 'Favori ajouté pour l\'utilisateur'}
-    except sqlite3.IntegrityError:
-        raise HTTPException(status_code=400, detail='Favori déjà lié à cet utilisateur')
-    finally:
-        conn.close()
-
-
-@app.get('/my/favorites')
-def list_my_favorites(Authorization: Optional[str] = Header(None)):
-    user_id = get_user_from_token(Authorization)
-    if not user_id:
-        raise HTTPException(status_code=401, detail='Unauthorized')
-    conn = get_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute('''
-            SELECT f.id, f.name, f.city, f.department
-            FROM favorites f
-            JOIN user_favorites uf ON uf.favorite_id = f.id
-            WHERE uf.user_id = ?
-        ''', (user_id,))
-        rows = cur.fetchall()
-        favs = [{"id": r[0], "name": r[1], "city": r[2], "department": r[3]} for r in rows]
-        return {"count": len(favs), "favorites": favs}
-    finally:
-        conn.close()
-
-
-@app.delete('/my/favorites/{museum_id}')
-def remove_my_favorite(museum_id: str, Authorization: Optional[str] = Header(None)):
-    user_id = get_user_from_token(Authorization)
-    if not user_id:
-        raise HTTPException(status_code=401, detail='Unauthorized')
-    conn = get_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute('DELETE FROM user_favorites WHERE user_id = ? AND favorite_id = ?', (user_id, museum_id))
-        conn.commit()
-        if cur.rowcount == 0:
-            raise HTTPException(status_code=404, detail='Favori non trouvé pour cet utilisateur')
-        return {'message': 'Favori retiré'}
     finally:
         conn.close()
 

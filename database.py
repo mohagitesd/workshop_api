@@ -30,26 +30,6 @@ def init_db():
         )
     """)
 
-    # Table to map favorites to users
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS user_favorites (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        favorite_id TEXT,
-        FOREIGN KEY(user_id) REFERENCES users(id),
-        FOREIGN KEY(favorite_id) REFERENCES favorites(id)
-    )
-    """)
-
-    # Tokens table for simple token-based auth
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS tokens (
-        token TEXT PRIMARY KEY,
-        user_id INTEGER,
-        created_at TEXT,
-        FOREIGN KEY(user_id) REFERENCES users(id)
-    )
-    """)
 
     conn.commit()
     conn.close()
