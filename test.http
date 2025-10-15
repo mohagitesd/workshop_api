@@ -1,7 +1,7 @@
-### 🏁 Test de l'API
+### Test de l'API
 GET http://127.0.0.1:8000/
 
-### 🎨 Récupérer quelques musées
+### Récupérer quelques musées
 GET http://127.0.0.1:8000/museums?limit=5
 
 ### Ajouter un favori
@@ -21,5 +21,5 @@ GET http://127.0.0.1:8000/favorites
 ### Supprimer un favori
 DELETE http://127.0.0.1:8000/favorites/musee-test-001
 
-### érifier après suppression
+### vérifier après suppression
 GET http://127.0.0.1:8000/favorites

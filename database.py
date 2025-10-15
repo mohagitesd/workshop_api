@@ -1,5 +1,6 @@
 import sqlite3
 
+
 DB_NAME = "museofile.db"
 
 def get_connection():
@@ -21,10 +22,31 @@ def init_db():
     """)
 
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS favorites (
+        CREATE TABLE IF NOT EXISTS favorites (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            city TEXT,
+            department TEXT
+        )
+    """)
+
+    # Table to map favorites to users
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS user_favorites (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
-        museum_id TEXT,
+        favorite_id TEXT,
+        FOREIGN KEY(user_id) REFERENCES users(id),
+        FOREIGN KEY(favorite_id) REFERENCES favorites(id)
+    )
+    """)
+
+    # Tokens table for simple token-based auth
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS tokens (
+        token TEXT PRIMARY KEY,
+        user_id INTEGER,
+        created_at TEXT,
         FOREIGN KEY(user_id) REFERENCES users(id)
     )
     """)

@@ -1,15 +1,19 @@
 import requests
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Header
 import uvicorn
 from pydantic import BaseModel
+from pathlib import Path
+from database import *
+import sqlite3
+import bcrypt
+from uuid import uuid4
+from typing import Optional
 
 
 app = FastAPI(title="API Muséofile rapide et filtrable")
 
-MUSEOFILE_API = "https://data.culture.gouv.fr/api/explore/v2.1/catalog/datasets/musees-de-france-base-museofile/records"
 
-# --- Stockage temporaire des favoris (en mémoire)
-favorites = []
+MUSEOFILE_API = "https://data.culture.gouv.fr/api/explore/v2.1/catalog/datasets/musees-de-france-base-museofile/records"
 
 
 # --- Modèle Pydantic pour un favori
@@ -18,7 +22,8 @@ class Favorite(BaseModel):
     name: str
     city: str | None = None
     department: str | None = None
-    
+
+
 @app.get("/")
 def root():
     return {"message": "Bienvenue sur l'API Muséofile filtrable !"}
@@ -42,7 +47,7 @@ def get_museums(
     if department:
         where_clauses.append(f"departement like '{department}'")
     if name:
-        where_clauses.append(f"nom_officiel like '%{name}%' or nom like '%{name}%'")
+        where_clauses.append(f"nom_officiel like '%{name}%'")
 
     # Combine les conditions avec AND
     if where_clauses:
@@ -79,28 +84,198 @@ def get_museums(
 
 @app.get("/favorites")
 def get_favorites():
-    return {"count": len(favorites), "favorites": favorites}
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id, name, city, department FROM favorites")
+        rows = cur.fetchall()
+        favs = [
+            {"id": r[0], "name": r[1], "city": r[2], "department": r[3]} for r in rows
+        ]
+        return {"count": len(favs), "favorites": favs}
+    finally:
+        conn.close()
 
 
-# --- Ajouter un musée aux favoris
+# ------------------ Authentication ------------------
+
+
+class RegisterIn(BaseModel):
+    username: str
+    email: str
+    password: str
+
+
+class LoginIn(BaseModel):
+    username: str
+    password: str
+
+
+def hash_password(plain: str) -> str:
+    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return bcrypt.checkpw(plain.encode(), hashed.encode())
+
+
+@app.post('/register')
+def register(data: RegisterIn):
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        hashed = hash_password(data.password)
+        cur.execute(
+            'INSERT INTO users (username, email, hashed_password) VALUES (?, ?, ?)',
+            (data.username, data.email, hashed),
+        )
+        conn.commit()
+        return {'message': 'Utilisateur créé'}
+    except sqlite3.IntegrityError as e:
+        raise HTTPException(status_code=400, detail='Username ou email déjà utilisé')
+    finally:
+        conn.close()
+
+
+@app.post('/login')
+def login(data: LoginIn):
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute('SELECT id, hashed_password FROM users WHERE username = ?', (data.username,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=401, detail='Identifiants invalides')
+        user_id, hashed = row[0], row[1]
+        if not verify_password(data.password, hashed):
+            raise HTTPException(status_code=401, detail='Identifiants invalides')
+        token = str(uuid4())
+        cur.execute('INSERT INTO tokens (token, user_id, created_at) VALUES (?, ?, datetime("now"))', (token, user_id))
+        conn.commit()
+        return {'token': token}
+    finally:
+        conn.close()
+
+
+def get_user_from_token(authorization: Optional[str]) -> Optional[int]:
+    # expects Authorization: Bearer <token>
+    if not authorization:
+        return None
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != 'bearer':
+        return None
+    token = parts[1]
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute('SELECT user_id FROM tokens WHERE token = ?', (token,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        return row[0]
+    finally:
+        conn.close()
+
+
+# ------------------ User favorites (protected) ------------------
+
+
+@app.post('/my/favorites')
+def add_my_favorite(fav: Favorite, Authorization: Optional[str] = Header(None)):
+    user_id = get_user_from_token(Authorization)
+    if not user_id:
+        raise HTTPException(status_code=401, detail='Unauthorized')
+
+    # Ensure favorite exists in favorites table
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        try:
+            cur.execute('INSERT INTO favorites (id, name, city, department) VALUES (?, ?, ?, ?)', (fav.id, fav.name, fav.city, fav.department))
+        except sqlite3.IntegrityError:
+            # already exists, that's fine
+            pass
+
+        # link to user
+        cur.execute('INSERT INTO user_favorites (user_id, favorite_id) VALUES (?, ?)', (user_id, fav.id))
+        conn.commit()
+        return {'message': 'Favori ajouté pour l\'utilisateur'}
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail='Favori déjà lié à cet utilisateur')
+    finally:
+        conn.close()
+
+
+@app.get('/my/favorites')
+def list_my_favorites(Authorization: Optional[str] = Header(None)):
+    user_id = get_user_from_token(Authorization)
+    if not user_id:
+        raise HTTPException(status_code=401, detail='Unauthorized')
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute('''
+            SELECT f.id, f.name, f.city, f.department
+            FROM favorites f
+            JOIN user_favorites uf ON uf.favorite_id = f.id
+            WHERE uf.user_id = ?
+        ''', (user_id,))
+        rows = cur.fetchall()
+        favs = [{"id": r[0], "name": r[1], "city": r[2], "department": r[3]} for r in rows]
+        return {"count": len(favs), "favorites": favs}
+    finally:
+        conn.close()
+
+
+@app.delete('/my/favorites/{museum_id}')
+def remove_my_favorite(museum_id: str, Authorization: Optional[str] = Header(None)):
+    user_id = get_user_from_token(Authorization)
+    if not user_id:
+        raise HTTPException(status_code=401, detail='Unauthorized')
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute('DELETE FROM user_favorites WHERE user_id = ? AND favorite_id = ?', (user_id, museum_id))
+        conn.commit()
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail='Favori non trouvé pour cet utilisateur')
+        return {'message': 'Favori retiré'}
+    finally:
+        conn.close()
+
+
 @app.post("/favorites")
 def add_favorite(fav: Favorite):
-    # Vérifie si déjà présent
-    if any(f["id"] == fav.id for f in favorites):
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "INSERT INTO favorites (id, name, city, department) VALUES (?, ?, ?, ?)",
+            (fav.id, fav.name, fav.city, fav.department),
+        )
+        conn.commit()
+        return {"message": "Musée ajouté aux favoris", "favorite": fav}
+    except sqlite3.IntegrityError:
         raise HTTPException(status_code=400, detail="Ce musée est déjà dans les favoris.")
-    favorites.append(fav.dict())
-    return {"message": "Musée ajouté aux favoris", "favorite": fav}
+    except Exception as exc:
+        print("Erreur DB:", exc)
+        raise HTTPException(status_code=500, detail="Erreur lors de l'enregistrement du favori")
+    finally:
+        conn.close()
 
 
-# --- Supprimer un musée des favoris
 @app.delete("/favorites/{museum_id}")
 def remove_favorite(museum_id: str):
-    global favorites
-    new_list = [f for f in favorites if f["id"] != museum_id]
-    if len(new_list) == len(favorites):
-        raise HTTPException(status_code=404, detail="Musée non trouvé dans les favoris.")
-    favorites = new_list
-    return {"message": "Musée retiré des favoris"}
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM favorites WHERE id = ?", (museum_id,))
+        conn.commit()
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Musée non trouvé dans les favoris.")
+        return {"message": "Musée retiré des favoris"}
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":
