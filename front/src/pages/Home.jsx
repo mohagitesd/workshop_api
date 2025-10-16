@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { fetchMuseums, addFavorite } from "../api";
 import SearchBar from "../components/SearchBar";
 import MuseumCard from "../components/MuseumCard";
@@ -18,6 +18,24 @@ export default function Home() {
     await addFavorite(museum);
     alert("Ajouté aux favoris !");
   }
+
+  useEffect(() => {
+    let mounted = true;
+    async function load() {
+      setLoading(true);
+      try {
+        const data = await fetchMuseums();
+        const items = data.results ?? data ?? [];
+        if (mounted) setMuseums(items);
+      } catch (e) {
+        console.error('Failed to load museums', e);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+    load();
+    return () => { mounted = false };
+  }, []);
 
   return (
     <div>

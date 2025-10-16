@@ -18,7 +18,7 @@ export default function MuseumDetail(){
 
   return (
     <div className="museum-detail">
-      <button style={{ marginBottom: 12 }} onClick={() => navigate(-1)}>← Retour</button>
+      <button className='btn-retour' onClick={() => navigate(-1)}>Retour</button>
       <article className="detail-grid">
         <main className="detail-main">
           <h1>{museum.name}</h1>

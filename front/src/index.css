@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&display=swap');
 
 .logo{
     font-weight: bold;
@@ -15,7 +16,7 @@
 }
 
 body{
-    font-family: 'Georgia', serif;
+    font-family: 'Playfair Display', serif;
     margin: 0;
     color: #222;
 }
@@ -99,13 +100,23 @@ h3{
     border-radius: var(--card-radius);
     overflow: hidden;
     box-shadow: 0 2px 0 rgba(0,0,0,0.03);
+    min-height: 350px;
+}
+
+.img-card-wrapper{
+    height: 160px;
+    overflow: hidden;
 }
 
 .museum-card img{
     width: 100%;
-    height: 160px;
     object-fit: cover;
     display: block;
+    transition: transform 0.4s ease;
+   
+}
+.museum-card:hover img{
+    transform: scale(1.1);
 }
 
 .museum-card .card-body{
@@ -132,6 +143,7 @@ h3{
     color: black;
     text-decoration: none;
     cursor: pointer;
+    transition: background 0.3s ease;
 }
 .btn-favorite:hover{
     background: #eee;
@@ -140,6 +152,17 @@ h3{
 
 
 /* Museum detail page styles */
+.btn-retour{
+    background: #fff;
+    border: 1px solid rgba(0,0,0,0.1);
+    padding: 8px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-bottom: 16px;
+}
+.btn-retour:hover{
+    background: #f9f9f9;
+}
 .museum-detail {
     max-width: 1100px;
     margin: 28px auto;
@@ -156,7 +179,6 @@ h3{
 .detail-main h1{
     font-size: 48px;
     margin: 0 0 18px 0;
-    font-family: 'Georgia', serif;
 }
 
 .detail-section{
@@ -202,4 +224,44 @@ h3{
     height: 180px;
     border: 0;
     border-radius: 8px;
+}
+
+/* Favorites list styles */
+.favorites-page{
+    max-width: 1100px;
+    margin: 28px auto;
+    padding: 0 16px;
+}
+
+.favorites-list{
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.favorite-item{
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    background: #fff;
+    padding: 12px;
+    border-radius: 12px;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.04);
+}
+
+.favorite-item img{
+    width: 220px;
+    height: 120px;
+    object-fit: cover;
+    border-radius: 8px;
+}
+
+.favorite-body h3{
+    margin: 0 0 6px 0;
+}
+
+.favorite-actions{
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
 }
