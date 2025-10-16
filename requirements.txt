@@ -12,6 +12,7 @@ idna==3.11
 pydantic==2.12.1
 pydantic_core==2.41.3
 PyJWT==2.10.1
+python-decouple==3.8
 python-dotenv==1.1.1
 python-multipart==0.0.20
 requests==2.32.5

@@ -1,0 +1,32 @@
+get http://localhost:8081/
+
+### 
+get  http://localhost:8081/posts
+
+###
+get http://localhost:8081/posts/1
+
+###
+POST http://localhost:8081/posts
+Content-Type: application/json
+
+{ "id": 2, "title": "Lorem Ipsum tres", "content": "content goes here"}
+
+###
+POST http://localhost:8081/user/signup
+Content-Type: application/json
+
+{ "fullname": "richnou", "email": "richnou@richnou.fr", "password": "richnou"}
+
+###
+POST http://localhost:8081/user/login
+Content-Type: application/json
+
+{ "email": "richnou@richnou.fr", "password": "richnou"}
+
+###
+POST http://localhost:8081/posts
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoicmljaG5vdUByaWNobm91LmZyIiwiZXhwaXJlcyI6MTc2MDUzNzk2NC45OTU5NDZ9.viffHin24xibFGz5vhjFdRXfKIUSDcVT0HKAdTUC03Q
+
+{ "id": 2, "title": "Lorem Ipsum tres", "content": "content goes here"}

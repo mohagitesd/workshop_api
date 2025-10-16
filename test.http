@@ -9,7 +9,7 @@ POST http://127.0.0.1:8000/favorites
 Content-Type: application/json
 
 {
-  "id": "musee-test-001",
+  "id": "musee-test-002",
   "name": "Musée du Louvre",
   "city": "Paris",
   "department": "75"
@@ -25,7 +25,7 @@ DELETE http://127.0.0.1:8000/favorites/musee-test-001
 GET http://127.0.0.1:8000/favorites
 
 ### Enregistrer un utilisateur
-POST http://127.0.0.1:8000/users
+POST http://127.0.0.1:8000/users/register
 Content-Type: application/json
 
 {
@@ -35,7 +35,7 @@ Content-Type: application/json
 }
 
 ### Connexion pour obtenir le token JWT
-POST http://127.0.0.1/login
+POST http://127.0.0.1:8000/users/login
 Content-Type: application/json
 
 { 
