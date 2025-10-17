@@ -1,11 +1,16 @@
 import requests
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Depends
 from pydantic import BaseModel, EmailStr
 import bcrypt
 import uvicorn
 from database import get_connection
 import sqlite3
 from fastapi.middleware.cors import CORSMiddleware
+from auth_bearer import JWTBearer
+from auth_handler import sign_jwt, decode_jwt
+
+
+
 
 
 
@@ -35,8 +40,15 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
 
+#--- login
+class UserLogin(BaseModel):
+    username: str
+    password: str
 
-@app.post("/register")
+
+
+
+@app.post("/users/register")
 def register(user: UserCreate):
     conn = get_connection()
     cur = conn.cursor()
@@ -47,14 +59,16 @@ def register(user: UserCreate):
             (user.username, user.email, hashed)
         )
         conn.commit()
-        return {"message": "Utilisateur créé", "username": user.username, "email": user.email}
+        user_id = cur.lastrowid
+        # return signed token
+        return sign_jwt(str(user_id))
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=400, detail="Nom d'utilisateur ou email déjà utilisé.")
     finally:
         conn.close()
 
 
-@app.get("/register")
+@app.get("/users/register")
 def get_register():
     conn = get_connection()
     cursor = conn.cursor()
@@ -65,6 +79,38 @@ def get_register():
         return {"users": user_list}
     finally:
         conn.close()
+
+@app.post("/users/login")
+def login(user: UserLogin):
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id, hashed_password FROM users WHERE username = ?", (user.username,))
+        row = cur.fetchone()
+        if row and bcrypt.checkpw(user.password.encode(), row[1].encode()):
+            user_id = row[0]
+            return sign_jwt(str(user_id))
+        else:
+            raise HTTPException(status_code=401, detail="Nom d'utilisateur ou mot de passe incorrect.")
+    finally:
+        conn.close()
+
+
+def get_current_user(token: str = Depends(JWTBearer())):
+    payload = decode_jwt(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Token invalide ou expiré")
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Token invalide (user_id manquant)")
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, username, email FROM users WHERE id = ?", (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=401, detail="Utilisateur introuvable")
+    return {"id": row[0], "username": row[1], "email": row[2]}
 
 
 @app.get("/")
@@ -141,11 +187,12 @@ def get_museums(
 
 
 @app.get("/favorites")
-def get_favorites():
+def get_favorites(current_user: dict = Depends(get_current_user)):
+    user_id = current_user["id"]
     conn = get_connection()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT id, name, city, department FROM favorites")
+        cur.execute("SELECT musee_id, name, city, department FROM favorites WHERE user_id = ?", (user_id,))
         rows = cur.fetchall()
         favs = [
             {"id": r[0], "name": r[1], "city": r[2], "department": r[3]} for r in rows
@@ -156,31 +203,33 @@ def get_favorites():
 
 
 @app.post("/favorites")
-def add_favorite(fav: Favorite):
+def add_favorite(fav: Favorite, current_user: dict = Depends(get_current_user)):
+    user_id = current_user["id"]
     conn = get_connection()
     cur = conn.cursor()
     try:
         cur.execute(
-            "INSERT INTO favorites (id, name, city, department) VALUES (?, ?, ?, ?)",
-            (fav.id, fav.name, fav.city, fav.department),
+            "INSERT INTO favorites (musee_id, name, city, department, user_id) VALUES (?, ?, ?, ?, ?)",
+            (fav.id, fav.name, fav.city, fav.department, user_id),
         )
         conn.commit()
         return {"message": "Musée ajouté aux favoris", "favorite": fav}
     except sqlite3.IntegrityError:
-        raise HTTPException(status_code=400, detail="Ce musée est déjà dans les favoris.")
+        raise HTTPException(status_code=400, detail="Ce musée est déjà dans les favoris pour cet utilisateur.")
     finally:
         conn.close()
 
 
 @app.delete("/favorites/{museum_id}")
-def remove_favorite(museum_id: str):
+def remove_favorite(museum_id: str, current_user: dict = Depends(get_current_user)):
+    user_id = current_user["id"]
     conn = get_connection()
     cur = conn.cursor()
     try:
-        cur.execute("DELETE FROM favorites WHERE id = ?", (museum_id,))
+        cur.execute("DELETE FROM favorites WHERE musee_id = ? AND user_id = ?", (museum_id, user_id))
         conn.commit()
         if cur.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Musée non trouvé dans les favoris.")
+            raise HTTPException(status_code=404, detail="Musée non trouvé dans les favoris de cet utilisateur.")
         return {"message": "Musée retiré des favoris"}
     finally:
         conn.close()

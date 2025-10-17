@@ -29,34 +29,28 @@ POST http://127.0.0.1:8000/users/register
 Content-Type: application/json
 
 {
-  "username": "testuser",
-  "email": "test@mail.com",
-  "password": "123456"
+  "username": "moha",
+  "email": "moha@mail.com",
+  "password": "19052004"
 }
 
 ### Connexion pour obtenir le token JWT
 POST http://127.0.0.1:8000/users/login
 Content-Type: application/json
 
-{ 
-  "email": "test@mail.com",
-  "password": "123456"
+{
+  "username": "moha",
+  "password": "19052004"
 }
 
 ### Voir les utilisateurs enregistrés
-GET http://127.0.0.1:8000/users
-
-### Connexion pour obtenir le token JWT
-POST http://127.0.0.1:8000/token
-Content-Type: application/x-www-form-urlencoded
-
-username=test@mail.com&password=123456
+GET http://127.0.0.1:8000/users/register
 
 
-### Ajout d’un favori (avec le token JWT)
+### Ajouter un favori avec le token JWT
 POST http://127.0.0.1:8000/favorites
 Content-Type: application/json
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjMsInVzZXJuYW1lIjoidGVzdHVzZXIiLCJleHAiOjE3NjA2MjI2ODR9.j-0afFiLdqp-obKRJ5He2XjqLhtNjrtLg4EsIUfPqt4
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMiIsImV4cGlyZXMiOjE3NjA2OTQ2MzMuNjk1OTg4fQ.80bJs9L9n9JOitJda4X3Zwt2rtvxgQmj-McUECOSrEg
 
 {
   "id": "M123",
@@ -68,4 +62,4 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjMsInVzZXJuY
 
 ### Récupération des favoris du user connecté
 GET http://127.0.0.1:8000/favorites
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjMsInVzZXJuYW1lIjoidGVzdHVzZXIiLCJleHAiOjE3NjA2MjEyMTZ9.w5S0A2uQ1VSvBZt1CRHPH5UbQDOs-gOxY_avf8R9mI8
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMiIsImV4cGlyZXMiOjE3NjA2OTQ2MzMuNjk1OTg4fQ.80bJs9L9n9JOitJda4X3Zwt2rtvxgQmj-McUECOSrEg

@@ -5,14 +5,12 @@ from typing import Dict, Optional
 import jwt
 from decouple import config
 from datetime import datetime, timedelta, timezone
-from dotenv import load_dotenv
 
-load_dotenv()
 
 
 JWT_SECRET = config("MUSEOFILE_SECRET")
 JWT_ALGORITHM = config("MUSEOFILE_ALGORITHM")
-JWT_EXPIRE_MINUTES = int(config("ACCESS_TOKEN_EXPIRE_MINUTES", default=1440))
+JWT_EXPIRE_MINUTES = int(config("ACCESS_TOKEN_EXPIRE_MINUTES" ))
 
 
 def token_response(token: str):
